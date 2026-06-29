@@ -1,0 +1,23 @@
+# Frontend build + Nginx serve + reverse proxy /api -> backend
+FROM node:20-bullseye AS builder
+
+WORKDIR /app
+
+# yarn.lock might not exist in some project snapshots — the [k] wildcard
+# makes the COPY optional (Docker glob: if no match, just copies nothing).
+COPY frontend/package.json /app/
+COPY frontend/yarn.loc[k] /app/
+RUN yarn install --network-timeout 600000
+
+# Copy the rest and build
+COPY frontend/ /app/
+ARG REACT_APP_BACKEND_URL
+ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
+RUN yarn build
+
+# ---- Runtime ----
+FROM nginx:1.27-alpine
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/build /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]

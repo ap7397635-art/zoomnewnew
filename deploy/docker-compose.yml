@@ -1,0 +1,69 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: zoom-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    networks: [zoomnet]
+    # NOT exposed to host — only backend reaches it inside the docker network.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: zoom-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks: [zoomnet]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.backend
+    container_name: zoom-backend
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
+    networks: [zoomnet]
+    expose:
+      - "8001"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+      args:
+        REACT_APP_BACKEND_URL: ${PUBLIC_BACKEND_URL}
+    container_name: zoom-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks: [zoomnet]
+    ports:
+      - "80:80"
+
+volumes:
+  mongo_data:
+  redis_data:
+
+networks:
+  zoomnet:
+    driver: bridge
